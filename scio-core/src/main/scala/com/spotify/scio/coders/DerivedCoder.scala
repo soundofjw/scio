@@ -21,6 +21,7 @@ private object Derived extends Serializable {
   import magnolia._
 
   def combineCoder[T](typeName: TypeName,
+                      schema: FSchema[T],
                       ps: Seq[Param[Coder, T]],
                       rawConstruct: Seq[Any] => T): Coder[T] = {
     val cs = new Array[(String, Coder[Any])](ps.length)
@@ -42,7 +43,7 @@ private object Derived extends Serializable {
       arr
     }
 
-    Coder.record[T](typeName.full, cs, rawConstruct, destruct)
+    Coder.record[T](typeName.full, schema, cs, rawConstruct, destruct)
   }
 }
 
@@ -52,8 +53,11 @@ trait LowPriorityCoderDerivation {
 
   type Typeclass[T] = Coder[T]
 
-  def combine[T](ctx: CaseClass[Coder, T]): Coder[T] =
-    Derived.combineCoder(ctx.typeName, ctx.parameters, ctx.rawConstruct)
+  def combine[T](ctx: CaseClass[Coder, T])(implicit schema: Schema[T]): Coder[T] =
+    Derived.combineCoder(ctx.typeName,
+                         schema.asInstanceOf[FSchema[T]],
+                         ctx.parameters,
+                         ctx.rawConstruct)
 
   def dispatch[T](sealedTrait: SealedTrait[Coder, T]): Coder[T] = {
     val idx: Map[magnolia.TypeName, Int] =

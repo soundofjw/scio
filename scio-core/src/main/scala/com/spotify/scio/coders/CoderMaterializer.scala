@@ -21,6 +21,8 @@ import org.apache.beam.sdk.coders.{Coder => BCoder, KvCoder, NullableCoder}
 import org.apache.beam.sdk.coders.CoderRegistry
 import org.apache.beam.sdk.options.PipelineOptions
 import org.apache.beam.sdk.options.PipelineOptionsFactory
+import org.apache.beam.sdk.values.Row
+import scala.collection.JavaConverters._
 
 object CoderMaterializer {
   import com.spotify.scio.ScioContext
@@ -47,8 +49,34 @@ object CoderMaterializer {
       case Transform(c, f) =>
         val u = f(beam(r, o, c))
         WrappedBCoder.create(beam(r, o, u))
-      case Record(typeName, coders, construct, destruct) =>
-        new RecordCoder(typeName, coders.map(c => c._1 -> beam(r, o, c._2)), construct, destruct)
+      case Record(typeName, schema, coders, construct, destruct) =>
+        val bcs: Array[(String, BCoder[Any])] = coders.map(c => c._1 -> beam(r, o, c._2))
+        // XXX: Is getRowSchema safe ?
+        //TODO: check for null values ?
+        val bschema = schema.fieldType.getRowSchema()
+        val fromRow: Row => T = { row =>
+          val values =
+            row.getValues.asScala.zip(bcs).map {
+              case (v, (_, RecordCoder(_, (_, _, fromRow), _, _, _))) =>
+                fromRow(v.asInstanceOf[Row])
+              case (v, c) => v
+            }
+          construct(values)
+        }
+        val toRow: T => Row = { t =>
+          val builder = Row.withSchema(bschema)
+          destruct(t)
+            .zip(bcs)
+            .map {
+              case (v, (_, RecordCoder(_, (_, toRow, _), _, _, _))) =>
+                toRow(v)
+              case (v, c) =>
+                v
+            }
+            .foreach(builder.addValue _)
+          builder.build()
+        }
+        new RecordCoder(typeName, (bschema, toRow, fromRow), bcs, construct, destruct)
       case Disjunction(typeName, idCoder, id, coders) =>
         WrappedBCoder.create(
           DisjunctionCoder(typeName,
