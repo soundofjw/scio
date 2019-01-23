@@ -21,8 +21,6 @@ import org.apache.beam.sdk.coders.{Coder => BCoder, KvCoder, NullableCoder}
 import org.apache.beam.sdk.coders.CoderRegistry
 import org.apache.beam.sdk.options.PipelineOptions
 import org.apache.beam.sdk.options.PipelineOptionsFactory
-import org.apache.beam.sdk.values.Row
-import scala.collection.JavaConverters._
 
 object CoderMaterializer {
   import com.spotify.scio.ScioContext
@@ -50,7 +48,6 @@ object CoderMaterializer {
         val u = f(beam(r, o, c))
         WrappedBCoder.create(beam(r, o, u))
       case Record(typeName, coders, construct, destruct) =>
-        import org.apache.beam.sdk.util.CoderUtils
         val bcs: Array[(String, Coder[Any], BCoder[Any])] =
           coders.map(c => (c._1, c._2, beam(r, o, c._2)))
         new RecordCoder(typeName, bcs.map(x => (x._1, x._3)), construct, destruct)
